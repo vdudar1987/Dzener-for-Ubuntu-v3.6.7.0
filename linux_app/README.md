@@ -13,7 +13,11 @@
 ## Запуск
 
 ```bash
+# консольный режим
 python3 linux_app/dzener_linux.py
+
+# графический интерфейс (Tkinter)
+python3 linux_app/dzener_linux.py --gui
 ```
 
 ## Примечание
