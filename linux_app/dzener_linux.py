@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import json
 import random
+import argparse
 import textwrap
 import time
+import tkinter as tk
+from tkinter import messagebox, ttk
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import List
@@ -184,7 +187,165 @@ def show_about() -> None:
     print(textwrap.dedent(text).strip())
 
 
+class DzenerGUI:
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        self.root.title("Dzener Linux Edition")
+        self.root.geometry("780x560")
+
+        self.state = load_state()
+        self.actions_vars: dict[str, tk.BooleanVar] = {}
+        self.status_var = tk.StringVar()
+
+        self._build_ui()
+        self.refresh_header()
+        self.refresh_my_tasks()
+
+    def _build_ui(self) -> None:
+        frame = ttk.Frame(self.root, padding=12)
+        frame.pack(fill="both", expand=True)
+
+        header = ttk.Label(frame, text="Dzener Linux Edition — графический интерфейс", font=("Arial", 13, "bold"))
+        header.pack(anchor="w")
+
+        self.info_label = ttk.Label(frame, text="")
+        self.info_label.pack(anchor="w", pady=(6, 12))
+
+        add_box = ttk.LabelFrame(frame, text="Добавление материала", padding=10)
+        add_box.pack(fill="x")
+
+        ttk.Label(add_box, text="Ссылка:").grid(row=0, column=0, sticky="w")
+        self.url_entry = ttk.Entry(add_box, width=80)
+        self.url_entry.grid(row=0, column=1, columnspan=3, sticky="ew", padx=8)
+
+        ttk.Label(add_box, text="Тип:").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        self.kind_var = tk.StringVar(value="article")
+        kind_box = ttk.Frame(add_box)
+        kind_box.grid(row=1, column=1, sticky="w", pady=(8, 0))
+        ttk.Radiobutton(kind_box, text="article", value="article", variable=self.kind_var).pack(side="left")
+        ttk.Radiobutton(kind_box, text="video", value="video", variable=self.kind_var).pack(side="left", padx=(12, 0))
+
+        actions_catalog = [
+            "дочитывание/досмотр",
+            "лайк",
+            "дизлайк",
+            "подписка",
+            "сохранение в закладки",
+            "комментарий",
+            "лайк/дизлайк комментария",
+        ]
+        ttk.Label(add_box, text="Действия:").grid(row=2, column=0, sticky="nw", pady=(8, 0))
+        actions_frame = ttk.Frame(add_box)
+        actions_frame.grid(row=2, column=1, columnspan=3, sticky="w", pady=(8, 0))
+        for idx, action in enumerate(actions_catalog):
+            var = tk.BooleanVar(value=(idx == 0))
+            self.actions_vars[action] = var
+            ttk.Checkbutton(actions_frame, text=action, variable=var).grid(row=idx // 2, column=idx % 2, sticky="w", padx=(0, 14))
+
+        ttk.Button(add_box, text="Добавить материал", command=self.gui_add_task).grid(row=3, column=0, columnspan=4, sticky="ew", pady=(10, 0))
+        add_box.columnconfigure(1, weight=1)
+
+        actions_box = ttk.LabelFrame(frame, text="Операции", padding=10)
+        actions_box.pack(fill="x", pady=(12, 0))
+        ttk.Button(actions_box, text="Запустить автообработку", command=self.gui_process_tasks).pack(side="left")
+        ttk.Button(actions_box, text="О программе", command=self.gui_show_about).pack(side="left", padx=8)
+
+        tasks_box = ttk.LabelFrame(frame, text="Мои материалы", padding=10)
+        tasks_box.pack(fill="both", expand=True, pady=(12, 0))
+
+        self.tasks_text = tk.Text(tasks_box, wrap="word", height=12)
+        self.tasks_text.pack(fill="both", expand=True)
+        self.tasks_text.configure(state="disabled")
+
+        status = ttk.Label(frame, textvariable=self.status_var)
+        status.pack(anchor="w", pady=(8, 0))
+
+    def refresh_header(self) -> None:
+        self.info_label.config(
+            text=(
+                f"Пользователь: {self.state.nickname} | "
+                f"Баланс: {self.state.points} баллов | "
+                f"Выполнено задач: {self.state.completed_tasks}"
+            )
+        )
+
+    def refresh_my_tasks(self) -> None:
+        self.tasks_text.configure(state="normal")
+        self.tasks_text.delete("1.0", "end")
+        if not self.state.submitted_tasks:
+            self.tasks_text.insert("end", "У вас пока нет добавленных материалов.\n")
+        else:
+            for idx, task in enumerate(self.state.submitted_tasks, start=1):
+                self.tasks_text.insert("end", f"{idx}. [{task.kind}] {task.url}\n")
+                self.tasks_text.insert("end", f"   Действия: {', '.join(task.desired_actions)}\n\n")
+        self.tasks_text.configure(state="disabled")
+
+    def selected_actions(self) -> List[str]:
+        selected = [action for action, var in self.actions_vars.items() if var.get()]
+        return selected or ["дочитывание/досмотр"]
+
+    def gui_add_task(self) -> None:
+        url = self.url_entry.get().strip()
+        if not validate_url(url):
+            messagebox.showerror("Ошибка", "Некорректный URL. Используйте https://...")
+            return
+
+        task = Task(
+            url=url,
+            kind=self.kind_var.get(),
+            desired_actions=self.selected_actions(),
+            owner=self.state.nickname,
+        )
+        self.state.submitted_tasks.append(task)
+        save_state(self.state)
+
+        self.url_entry.delete(0, "end")
+        self.refresh_my_tasks()
+        self.status_var.set("✅ Материал добавлен в очередь.")
+
+    def gui_process_tasks(self) -> None:
+        tasks = generate_exchange_tasks()
+        processed = len(tasks)
+        self.state.points += processed * POINTS_PER_TASK
+        self.state.completed_tasks += processed
+        save_state(self.state)
+
+        self.refresh_header()
+        self.status_var.set(f"✅ Выполнено заданий: {processed}, начислено {processed * POINTS_PER_TASK} баллов.")
+        messagebox.showinfo("Автообработка завершена", f"Выполнено заданий: {processed}\nТекущий баланс: {self.state.points}")
+
+    def gui_show_about(self) -> None:
+        messagebox.showinfo(
+            "О программе",
+            textwrap.dedent(
+                """
+                Dzener Linux Edition — локальная Linux-реализация логики обмена действиями.
+
+                Возможности:
+                • добавление ссылок на статьи/видео;
+                • автоматическая обработка очереди задач;
+                • начисление баллов (+2 за задание);
+                • сохранение статистики в ~/.dzener-linux/state.json.
+                """
+            ).strip(),
+        )
+
+
+def run_gui() -> None:
+    root = tk.Tk()
+    DzenerGUI(root)
+    root.mainloop()
+
+
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Dzener Linux Edition")
+    parser.add_argument("--gui", action="store_true", help="Запустить графический интерфейс (Tkinter)")
+    args = parser.parse_args()
+
+    if args.gui:
+        run_gui()
+        return
+
     state = load_state()
     while True:
         print_header(state)
