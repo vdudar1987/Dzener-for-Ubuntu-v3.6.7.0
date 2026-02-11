@@ -1,2 +1,13 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Keep source files normalized for reliable diffs across platforms.
+* text=auto eol=lf
+
+# Windows distribution artifacts must remain byte-identical.
+windows/** -text -diff -eol
+
+# Common binary formats should never be line-ending normalized.
+*.dll -text
+*.exe -text
+*.dat -text
+*.pak -text
+*.bin -text
+*.json text eol=lf
